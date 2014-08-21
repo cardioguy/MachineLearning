@@ -1,0 +1,127 @@
+---
+title: "Machine Learning Assignment"
+author: "MBJ" 
+date: "Wednesday, August 20, 2014"
+output: html_document
+---
+```{r, include=FALSE}
+setwd("C:/Users/mjaffe/Documents/CourseraandOpenEDx/_DataScience(Hopkins)/PracticalMachineLearning/Assignment")
+
+if (!require("caret")) {
+  install.packages("caret", repos="http://cran.rstudio.com/") 
+  library("caret")
+}
+
+if (!require("rattle")) {
+  install.packages("caret", repos="http://cran.rstudio.com/") 
+  library("rattle")
+}
+
+```
+
+## Summary
+Accelerometer data from 6 participants using barbells was used to build predictors describing the type of barbell lift performed. It was determined (of the two approached evaluated) that boosting trees provided the best performance on the cross-validation set of 0.96 accuracy.
+
+## Background
+
+Devices such as Jawbone Up, Nike FuelBand, and Fitbit permit the collection of large quantities of data about personal activity relatively inexpensively using accelerometers. Data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants (courtesy of http://groupware.les.inf.puc-rio.br/har in which each participant was asked to perform barbell lifts correctly and incorrectly in 5 different ways was used. The data includes a large number of variables from accelerometers and the "classe" variable which indicates the type of lifts performed.
+
+Class  Description
+ 
+ A      exactly according to the specification, 
+ 
+ B      throwing the elbows to the front, 
+ 
+ C      lifting the dumbbell only halfway, 
+ 
+ D      lowering the dumbbell only halfway and 
+ 
+ E      throwing the hips to the front.
+
+## Methods
+
+
+The training data for this project was downloaded from: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data for this project was downloaded from: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Credit for this data: http://groupware.les.inf.puc-rio.br/har.  
+
+
+```{r}
+trainset.raw <- read.csv("pml-training.csv",header=TRUE,na.strings=c("", "NA", "NULL"))
+
+# remove columns extraneous to the analysis
+delvars = c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window","num_window")
+myvars <- names(trainset.raw) %in% delvars
+trainset.edited <- trainset.raw[!myvars]
+
+# number cases
+nbrcases.edited = dim(trainset.edited)[1]
+nbrcols.edited  = dim(trainset.edited)[1]
+
+# remove variable with less than 5% availability
+colprcntminbool = ((100.0*colSums(!is.na(trainset.edited)))/nbrcases.edited) > 5.0
+trainset.edited <- trainset.edited[colprcntminbool]
+nbrcols.trimmed  <- dim(trainset.edited)[2]
+
+# compute the correlation matrix and find how many with strong correlation
+fctr = c("classe")
+myvars <- names(trainset.edited) %in% fctr 
+cortrain <- trainset.edited[!myvars]
+cormatrix = cor(cortrain)
+cid = which(cormatrix > 0.9,arr.ind=TRUE) 
+indx = c(1:(length(cid)[1]/2))
+cid[!(cid[indx,1]==cid[indx,2]),]
+
+# parition data
+in.train <- createDataPartition(trainset.edited$classe, p=.60, list=FALSE)
+train <- trainset.edited[ in.train,]
+test  <- trainset.edited[-in.train,]
+remove(trainset.edited)
+```
+
+The data was read (with na.strings options used), and edited by removing columns unrelated to the prediction task (e.g. time, date) and those columns with less than 5% of the rows with data resulting in a reduction of variables from `r nbrcols.edited`  to `r nbrcols.trimmed`.  The possibility of eliminating columns that were strong correlated was explored and it was determinted that only 4 sets of relationships had correlations greater than 0.9. After this the data was partitioned into training and cross-validation sets (60/40).
+
+Two approaches were explored - linear discrimant analysis, and boosted trees. Random forests was considered and even run with subsets of the data since it is most likely a good performer on this data (given the large number of variables). However, given the long run time of this algorithm with the settings selected and the good performance of the other methods - it was dropped for this assignment.
+
+# Results
+
+```{r}
+# all variables numeric
+fol <- formula(classe ~ .)
+
+# linear discriminant analysis
+mod.lda <- train(classe ~ ., data=train, method="lda") 
+pred.lda <- predict(mod.lda, test)
+conf.lda = confusionMatrix(pred.lda, test$classe)
+conf.lda
+
+# Stochastic Gradient Boosting        
+mod.gbm <- train(classe ~ ., data=train, method="gbm",verbose = FALSE) 
+pred.gbm <- predict(mod.gbm, test)
+conf.gbm = confusionMatrix(pred.gbm, test$classe)
+conf.gbm
+vars.gbm = varImp(mod.gbm, scale = FALSE)
+print(plot(vars.gbm))
+
+```
+
+The out-of-sample error/accuracy with the cross-validation set from  confusion matrix gave very good results for the boosted tree approach.  The top 3 variables of importance can be observed to be roll_belt, pitch_forearm and yaw_belt. 
+
+
+## Conclusion
+The linear discriminant analysis provides a cross-validation (CV) accuracy of approx. 0.7.  The Stochastic Gradient Boosting provided a very good level of CV accuracy (0.96) of predicting the classes A-E from accelerometers measurements from the 6 participants.  Lastly, the data was read in for the 20 test cases and predictions for the different approaches determined, with small differences between the two methods - with the gradient boosting matching the solution.  
+
+```{r}
+testdata = read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL"))
+predictions.lda <- predict(mod.lda, testdata)
+predictions.lda
+
+predictions.gbm <- predict(mod.gbm, testdata)
+predictions.gbm
+```
